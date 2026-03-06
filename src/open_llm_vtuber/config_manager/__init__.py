@@ -10,7 +10,7 @@ from .main import Config
 from .system import SystemConfig
 from .character import CharacterConfig
 from .live import LiveConfig, BiliBiliLiveConfig
-from .stateless_llm import (
+from .stateless_llm_models import (
     OpenAICompatibleConfig,
     ClaudeConfig,
     LlamaCppConfig,

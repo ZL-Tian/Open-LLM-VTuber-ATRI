@@ -192,7 +192,6 @@ class WebSocketHandler:
             asr_engine=self.default_context_cache.asr_engine,
             tts_engine=self.default_context_cache.tts_engine,
             vad_engine=self.default_context_cache.vad_engine,
-            agent_engine=self.default_context_cache.agent_engine,
             translate_engine=self.default_context_cache.translate_engine,
             mcp_server_registery=self.default_context_cache.mcp_server_registery,
             tool_adapter=self.default_context_cache.tool_adapter,
@@ -290,6 +289,7 @@ class WebSocketHandler:
                 broadcast_to_group=self.broadcast_to_group,
             )
 
+        context = self.client_contexts.pop(client_uid, None)
         await handle_client_disconnect(
             client_uid=client_uid,
             chat_group_manager=self.chat_group_manager,
@@ -299,7 +299,6 @@ class WebSocketHandler:
 
         # Clean up other client data
         self.client_connections.pop(client_uid, None)
-        self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         if client_uid in self.current_conversation_tasks:
             task = self.current_conversation_tasks[client_uid]
@@ -308,7 +307,6 @@ class WebSocketHandler:
             self.current_conversation_tasks.pop(client_uid, None)
 
         # Call context close to clean up resources (e.g., MCPClient)
-        context = self.client_contexts.get(client_uid)
         if context:
             await context.close()
 
@@ -317,8 +315,8 @@ class WebSocketHandler:
 
     async def _cleanup_failed_connection(self, client_uid: str) -> None:
         """Clean up failed connection data"""
+        context = self.client_contexts.pop(client_uid, None)
         self.client_connections.pop(client_uid, None)
-        self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         self.chat_group_manager.client_group_map.pop(client_uid, None)
 
@@ -327,6 +325,9 @@ class WebSocketHandler:
             if task and not task.done():
                 task.cancel()
             self.current_conversation_tasks.pop(client_uid, None)
+
+        if context:
+            await context.close()
 
         message_handler.cleanup_client(client_uid)
 

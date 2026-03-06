@@ -13,6 +13,7 @@ class OllamaLLM(AsyncLLM):
         organization_id: str = "z",
         project_id: str = "z",
         temperature: float = 1.0,
+        max_concurrent_requests: int = 1,
         keep_alive: float = -1,
         unload_at_exit: bool = True,
     ):
@@ -26,6 +27,7 @@ class OllamaLLM(AsyncLLM):
             organization_id=organization_id,
             project_id=project_id,
             temperature=temperature,
+            max_concurrent_requests=max_concurrent_requests,
         )
         try:
             # preload model

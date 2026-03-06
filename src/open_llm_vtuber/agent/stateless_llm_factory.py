@@ -39,6 +39,7 @@ class LLMFactory:
                 organization_id=kwargs.get("organization_id"),
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
+                max_concurrent_requests=kwargs.get("max_concurrent_requests"),
             )
         if llm_provider == "stateless_llm_with_template":
             return StatelessLLMWithTemplate(
@@ -48,6 +49,8 @@ class LLMFactory:
                 organization_id=kwargs.get("organization_id"),
                 template=kwargs.get("template"),
                 project_id=kwargs.get("project_id"),
+                temperature=kwargs.get("temperature"),
+                max_concurrent_requests=kwargs.get("max_concurrent_requests"),
             )
         if llm_provider == "ollama_llm":
             return OllamaLLM(
@@ -57,6 +60,7 @@ class LLMFactory:
                 organization_id=kwargs.get("organization_id"),
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
+                max_concurrent_requests=kwargs.get("max_concurrent_requests"),
                 keep_alive=kwargs.get("keep_alive"),
                 unload_at_exit=kwargs.get("unload_at_exit"),
             )
@@ -73,6 +77,7 @@ class LLMFactory:
                 base_url=kwargs.get("base_url"),
                 model=kwargs.get("model"),
                 llm_api_key=kwargs.get("llm_api_key"),
+                max_concurrent_requests=kwargs.get("max_concurrent_requests"),
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")

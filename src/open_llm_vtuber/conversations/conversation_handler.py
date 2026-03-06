@@ -16,6 +16,20 @@ from .types import GroupConversationState
 from prompts import prompt_loader
 
 
+def _register_conversation_task(
+    task_key: str,
+    task: asyncio.Task,
+    current_conversation_tasks: Dict[str, Optional[asyncio.Task]],
+) -> None:
+    current_conversation_tasks[task_key] = task
+
+    def _cleanup_task(completed_task: asyncio.Task) -> None:
+        if current_conversation_tasks.get(task_key) is completed_task:
+            current_conversation_tasks.pop(task_key, None)
+
+    task.add_done_callback(_cleanup_task)
+
+
 async def handle_conversation_trigger(
     msg_type: str,
     data: dict,
@@ -81,31 +95,50 @@ async def handle_conversation_trigger(
         ):
             logger.info(f"Starting new group conversation for {task_key}")
 
-            current_conversation_tasks[task_key] = asyncio.create_task(
-                process_group_conversation(
-                    client_contexts=client_contexts,
-                    client_connections=client_connections,
-                    broadcast_func=broadcast_to_group,
-                    group_members=group.members,
-                    initiator_client_uid=client_uid,
+            _register_conversation_task(
+                task_key,
+                asyncio.create_task(
+                    process_group_conversation(
+                        client_contexts=client_contexts,
+                        client_connections=client_connections,
+                        broadcast_func=broadcast_to_group,
+                        group_members=group.members,
+                        initiator_client_uid=client_uid,
+                        user_input=user_input,
+                        images=images,
+                        session_emoji=session_emoji,
+                        metadata=metadata,
+                    )
+                ),
+                current_conversation_tasks,
+            )
+        else:
+            logger.warning(
+                f"Skipping overlapping group conversation trigger for {task_key}."
+            )
+    else:
+        # Use client_uid as task key for individual conversations
+        existing_task = current_conversation_tasks.get(client_uid)
+        if existing_task and not existing_task.done():
+            logger.warning(
+                f"Skipping overlapping conversation trigger '{msg_type}' for client {client_uid}."
+            )
+            return
+
+        _register_conversation_task(
+            client_uid,
+            asyncio.create_task(
+                process_single_conversation(
+                    context=context,
+                    websocket_send=websocket.send_text,
+                    client_uid=client_uid,
                     user_input=user_input,
                     images=images,
                     session_emoji=session_emoji,
                     metadata=metadata,
                 )
-            )
-    else:
-        # Use client_uid as task key for individual conversations
-        current_conversation_tasks[client_uid] = asyncio.create_task(
-            process_single_conversation(
-                context=context,
-                websocket_send=websocket.send_text,
-                client_uid=client_uid,
-                user_input=user_input,
-                images=images,
-                session_emoji=session_emoji,
-                metadata=metadata,
-            )
+            ),
+            current_conversation_tasks,
         )
 
 

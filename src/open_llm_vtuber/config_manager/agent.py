@@ -6,7 +6,7 @@ different types of agents.
 from pydantic import BaseModel, Field
 from typing import Dict, ClassVar, Optional, Literal, List
 from .i18n import I18nMixin, Description
-from .stateless_llm import StatelessLLMConfigs
+from .stateless_llm_models import StatelessLLMConfigs
 
 # ======== Configurations for different Agents ========
 

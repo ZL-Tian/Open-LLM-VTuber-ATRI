@@ -10,6 +10,7 @@ from loguru import logger
 from anthropic import AsyncAnthropic, NOT_GIVEN
 
 from .stateless_llm_interface import StatelessLLMInterface
+from .request_limiter import build_backend_key, limit_request_concurrency
 
 
 class AsyncLLM(StatelessLLMInterface):
@@ -19,6 +20,7 @@ class AsyncLLM(StatelessLLMInterface):
         base_url: str = None,
         llm_api_key: str = None,
         system: str = None,
+        max_concurrent_requests: int = 1,
     ):
         """
         Initialize Claude LLM.
@@ -31,13 +33,22 @@ class AsyncLLM(StatelessLLMInterface):
         """
         self.model = model
         self.system = system
+        self.max_concurrent_requests = max(1, int(max_concurrent_requests))
 
         # Initialize Claude client
         self.client = AsyncAnthropic(
             api_key=llm_api_key, base_url=base_url if base_url else None
         )
+        self._limiter_key = build_backend_key(
+            provider_name="claude_llm",
+            base_url=base_url,
+            api_key=llm_api_key,
+        )
 
-        logger.info(f"Initialized Claude AsyncLLM with model: {self.model}")
+        logger.info(
+            "Initialized Claude AsyncLLM with model: "
+            f"{self.model}, max_concurrent_requests={self.max_concurrent_requests}"
+        )
         logger.debug(f"Base URL: {base_url}")
 
     def _convert_message_format(self, message: Dict[str, Any]) -> Dict[str, Any]:
@@ -109,131 +120,140 @@ class AsyncLLM(StatelessLLMInterface):
             - {"type": "error", "message": "..."}
         """
         try:
-            # Filter out system messages and convert message format
-            converted_messages = [
-                self._convert_message_format(msg)
-                for msg in messages
-                if msg["role"] != "system"
-            ]
+            async with limit_request_concurrency(
+                self._limiter_key, self.max_concurrent_requests
+            ):
+                # Filter out system messages and convert message format
+                converted_messages = [
+                    self._convert_message_format(msg)
+                    for msg in messages
+                    if msg["role"] != "system"
+                ]
 
-            logger.debug(f"Sending messages to Claude API: {converted_messages}")
-            logger.debug(f"Tools provided: {tools}")
+                logger.debug(f"Sending messages to Claude API: {converted_messages}")
+                logger.debug(f"Tools provided: {tools}")
 
-            async with self.client.messages.stream(
-                messages=converted_messages,
-                system=system if system else (self.system if self.system else ""),
-                model=self.model,
-                max_tokens=1024,
-                tools=tools if tools else NOT_GIVEN,
-            ) as stream:
-                current_tool_call_info = None
-                partial_json_accumulator = ""
+                async with self.client.messages.stream(
+                    messages=converted_messages,
+                    system=system if system else (self.system if self.system else ""),
+                    model=self.model,
+                    max_tokens=1024,
+                    tools=tools if tools else NOT_GIVEN,
+                ) as stream:
+                    current_tool_call_info = None
+                    partial_json_accumulator = ""
 
-                async for event in stream:
-                    if event.type == "message_start":
-                        logger.debug("Stream: message_start")
-                        yield {
-                            "type": "message_start",
-                            "data": event.message.model_dump(exclude_none=True),
-                        }
-                    elif event.type == "content_block_start":
-                        logger.debug(
-                            f"Stream: content_block_start - Index: {event.index}, Type: {event.content_block.type}"
-                        )
-                        if event.content_block.type == "text":
-                            pass  # Handled by text_delta
-                        elif event.content_block.type == "tool_use":
-                            current_tool_call_info = {
-                                "id": event.content_block.id,
-                                "name": event.content_block.name,
-                                "input": None,
-                                "index": event.index,  # Store index
-                            }
-                            partial_json_accumulator = ""
-                            logger.debug(
-                                f"Stream: tool_use started - ID: {current_tool_call_info['id']}, Name: {current_tool_call_info['name']}"
-                            )
+                    async for event in stream:
+                        if event.type == "message_start":
+                            logger.debug("Stream: message_start")
                             yield {
-                                "type": "tool_use_start",
-                                "data": current_tool_call_info.copy(),
+                                "type": "message_start",
+                                "data": event.message.model_dump(exclude_none=True),
                             }
-                    elif event.type == "content_block_delta":
-                        logger.debug(
-                            f"Stream: content_block_delta - Index: {event.index}, Delta Type: {event.delta.type}"
-                        )
-                        if event.delta.type == "text_delta":
-                            yield {"type": "text_delta", "text": event.delta.text}
-                        elif event.delta.type == "input_json_delta":
+                        elif event.type == "content_block_start":
+                            logger.debug(
+                                f"Stream: content_block_start - Index: {event.index}, Type: {event.content_block.type}"
+                            )
+                            if event.content_block.type == "text":
+                                pass  # Handled by text_delta
+                            elif event.content_block.type == "tool_use":
+                                current_tool_call_info = {
+                                    "id": event.content_block.id,
+                                    "name": event.content_block.name,
+                                    "input": None,
+                                    "index": event.index,  # Store index
+                                }
+                                partial_json_accumulator = ""
+                                logger.debug(
+                                    f"Stream: tool_use started - ID: {current_tool_call_info['id']}, Name: {current_tool_call_info['name']}"
+                                )
+                                yield {
+                                    "type": "tool_use_start",
+                                    "data": current_tool_call_info.copy(),
+                                }
+                        elif event.type == "content_block_delta":
+                            logger.debug(
+                                f"Stream: content_block_delta - Index: {event.index}, Delta Type: {event.delta.type}"
+                            )
+                            if event.delta.type == "text_delta":
+                                yield {"type": "text_delta", "text": event.delta.text}
+                            elif event.delta.type == "input_json_delta":
+                                if (
+                                    current_tool_call_info
+                                    and event.index == current_tool_call_info["index"]
+                                ):
+                                    partial_json_accumulator += (
+                                        event.delta.partial_json
+                                    )
+                                    logger.trace(
+                                        f"Stream: input_json_delta - Tool ID: {current_tool_call_info['id']}, Partial: {event.delta.partial_json}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        f"Received input_json_delta but no active tool call matching index {event.index}"
+                                    )
+                        elif event.type == "content_block_stop":
+                            logger.debug(
+                                f"Stream: content_block_stop - Index: {event.index}"
+                            )
+                            # Check if this stop corresponds to the active tool call
                             if (
                                 current_tool_call_info
                                 and event.index == current_tool_call_info["index"]
                             ):
-                                partial_json_accumulator += event.delta.partial_json
-                                logger.trace(
-                                    f"Stream: input_json_delta - Tool ID: {current_tool_call_info['id']}, Partial: {event.delta.partial_json}"
-                                )
-                            else:
-                                logger.warning(
-                                    f"Received input_json_delta but no active tool call matching index {event.index}"
-                                )
-                    elif event.type == "content_block_stop":
-                        logger.debug(
-                            f"Stream: content_block_stop - Index: {event.index}"
-                        )
-                        # Check if this stop corresponds to the active tool call
-                        if (
-                            current_tool_call_info
-                            and event.index == current_tool_call_info["index"]
-                        ):
-                            try:
-                                if not partial_json_accumulator.strip():
-                                    logger.warning(
-                                        f"Empty JSON input received for tool ID: {current_tool_call_info['id']}. Using empty object."
+                                try:
+                                    if not partial_json_accumulator.strip():
+                                        logger.warning(
+                                            f"Empty JSON input received for tool ID: {current_tool_call_info['id']}. Using empty object."
+                                        )
+                                        tool_input = {}
+                                    else:
+                                        tool_input = json.loads(
+                                            partial_json_accumulator
+                                        )
+                                    current_tool_call_info["input"] = tool_input
+                                    logger.debug(
+                                        f"Stream: tool_use completed - ID: {current_tool_call_info['id']}, Input: {tool_input}"
                                     )
-                                    tool_input = {}
-                                else:
-                                    tool_input = json.loads(partial_json_accumulator)
-                                current_tool_call_info["input"] = tool_input
-                                logger.debug(
-                                    f"Stream: tool_use completed - ID: {current_tool_call_info['id']}, Input: {tool_input}"
-                                )
-                                # Yield the complete tool call info
-                                yield {
-                                    "type": "tool_use_complete",
-                                    "data": current_tool_call_info.copy(),
-                                }
-                            except json.JSONDecodeError as e:
-                                logger.error(
-                                    f"Failed to decode tool input JSON: {partial_json_accumulator}. Error: {e}"
-                                )
-                                yield {
-                                    "type": "error",
-                                    "message": f"Failed to parse tool input JSON for tool ID {current_tool_call_info['id']}",
-                                }
-                            finally:
-                                # Reset regardless of success or failure for this index
-                                current_tool_call_info = None
-                                partial_json_accumulator = ""
-                    elif event.type == "message_delta":
-                        logger.debug(
-                            f"Stream: message_delta - Delta: {event.delta.model_dump(exclude_none=True)}, Usage: {event.usage}"
-                        )
-                        yield {
-                            "type": "message_delta",
-                            "data": {
-                                "delta": event.delta.model_dump(exclude_none=True),
-                                "usage": event.usage.model_dump(),
-                            },
-                        }
-                    elif event.type == "message_stop":
-                        logger.debug("Stream: message_stop")
-                        yield {"type": "message_stop"}
-                        # No need to break here, the context manager handles the end
-                    elif event.type == "ping":
-                        logger.trace("Stream: ping")
-                        pass  # Ignore pings
-                    # Anthropic SDK might raise errors directly, or via event.type == 'error'
-                    # The outer try/except handles SDK-level errors.
+                                    # Yield the complete tool call info
+                                    yield {
+                                        "type": "tool_use_complete",
+                                        "data": current_tool_call_info.copy(),
+                                    }
+                                except json.JSONDecodeError as e:
+                                    logger.error(
+                                        f"Failed to decode tool input JSON: {partial_json_accumulator}. Error: {e}"
+                                    )
+                                    yield {
+                                        "type": "error",
+                                        "message": f"Failed to parse tool input JSON for tool ID {current_tool_call_info['id']}",
+                                    }
+                                finally:
+                                    # Reset regardless of success or failure for this index
+                                    current_tool_call_info = None
+                                    partial_json_accumulator = ""
+                        elif event.type == "message_delta":
+                            logger.debug(
+                                f"Stream: message_delta - Delta: {event.delta.model_dump(exclude_none=True)}, Usage: {event.usage}"
+                            )
+                            yield {
+                                "type": "message_delta",
+                                "data": {
+                                    "delta": event.delta.model_dump(
+                                        exclude_none=True
+                                    ),
+                                    "usage": event.usage.model_dump(),
+                                },
+                            }
+                        elif event.type == "message_stop":
+                            logger.debug("Stream: message_stop")
+                            yield {"type": "message_stop"}
+                            # No need to break here, the context manager handles the end
+                        elif event.type == "ping":
+                            logger.trace("Stream: ping")
+                            pass  # Ignore pings
+                        # Anthropic SDK might raise errors directly, or via event.type == 'error'
+                        # The outer try/except handles SDK-level errors.
 
         except Exception as e:
             logger.error(f"Claude API error occurred: {str(e)}")

@@ -207,7 +207,6 @@ class ServiceContext:
         asr_engine: ASRInterface,
         tts_engine: TTSInterface,
         vad_engine: VADInterface,
-        agent_engine: AgentInterface,
         translate_engine: TranslateInterface | None,
         mcp_server_registery: ServerRegistry | None = None,
         tool_adapter: ToolAdapter | None = None,
@@ -215,8 +214,8 @@ class ServiceContext:
         client_uid: str = None,
     ) -> None:
         """
-        Load the ServiceContext with the reference of the provided instances.
-        Pass by reference so no reinitialization will be done.
+        Load the ServiceContext with shared engine references and rebuild
+        session-local state that must not be shared across clients.
         """
         if not character_config:
             raise ValueError("character_config cannot be None")
@@ -230,7 +229,7 @@ class ServiceContext:
         self.asr_engine = asr_engine
         self.tts_engine = tts_engine
         self.vad_engine = vad_engine
-        self.agent_engine = agent_engine
+        self.agent_engine = None
         self.translate_engine = translate_engine
         # Load potentially shared components by reference
         self.mcp_server_registery = mcp_server_registery
@@ -242,6 +241,11 @@ class ServiceContext:
         await self._init_mcp_components(
             self.character_config.agent_config.agent_settings.basic_memory_agent.use_mcpp,
             self.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
+        )
+
+        await self.init_agent(
+            self.character_config.agent_config,
+            self.character_config.persona_prompt,
         )
 
         logger.debug(f"Loaded service context with cache: {character_config}")

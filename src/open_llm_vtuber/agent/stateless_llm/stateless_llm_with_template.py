@@ -11,6 +11,7 @@ from loguru import logger
 from typing import AsyncIterator, List, Dict, Any
 
 from .stateless_llm_interface import StatelessLLMInterface
+from .request_limiter import build_backend_key, limit_request_concurrency
 
 
 TEMPLATES = {
@@ -93,6 +94,7 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         project_id: str = "z",
         template: str = "CHATML",
         temperature: float = 1.0,
+        max_concurrent_requests: int = 1,
     ):
         """
         Initializes an instance of the `AsyncLLM` class.
@@ -106,16 +108,26 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         - template (str, optional): The Jinja template to use. Defaults to "LLAMA3".
         - temperature (float, optional): What sampling temperature to use, between 0 and 2. Defaults to 1.0.
         """
+        self.base_url = base_url
         self.completion_url = base_url
         self.model = model
         self.temperature = temperature
+        self.max_concurrent_requests = max(1, int(max_concurrent_requests))
         self.template = Template(TEMPLATES[template]["template"])
         self.eot_token = TEMPLATES[template]["eot_token"]
         self.prompt_headers = {
             "Authorization": llm_api_key or "Bearer your_api_key_here"
         }
+        self._limiter_key = build_backend_key(
+            provider_name="stateless_llm_with_template",
+            base_url=base_url,
+            organization_id=organization_id,
+            project_id=project_id,
+            api_key=llm_api_key,
+        )
         logger.info(
-            f"Initialized AsyncLLM with the parameters: {self.completion_url} ({template})"
+            "Initialized AsyncLLM with the parameters: "
+            f"{self.completion_url} ({template}), max_concurrent_requests={self.max_concurrent_requests}"
         )
 
     async def chat_completion(
@@ -140,34 +152,40 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         bos_token = "<|begin_of_text|>"
         stream = None
         try:
-            # If system prompt is provided, add it to the messages
-            messages_with_system: List[Dict[str, Any]] = messages
-            if system:
-                messages_with_system = [
-                    {"role": "system", "content": system},
-                    *messages,
-                ]
-            prompt = self.template.render(
-                messages=messages_with_system,
-                bos_token=bos_token,
-                add_generation_prompt=True,
-            )
-            data: Dict = {
-                "stream": True,
-                "temperature": self.temperature,
-                "prompt": prompt,
-            }
-            with requests.post(
-                self.completion_url, headers=self.prompt_headers, json=data, stream=True
-            ) as response:
-                for line in response.iter_lines():
-                    if line:
-                        line = self._clean_raw_bytes(line)
-                        next_token = self._process_line(line)
-                        if next_token:
-                            if next_token == self.eot_token:
-                                break
-                            yield next_token
+            async with limit_request_concurrency(
+                self._limiter_key, self.max_concurrent_requests
+            ):
+                # If system prompt is provided, add it to the messages
+                messages_with_system: List[Dict[str, Any]] = messages
+                if system:
+                    messages_with_system = [
+                        {"role": "system", "content": system},
+                        *messages,
+                    ]
+                prompt = self.template.render(
+                    messages=messages_with_system,
+                    bos_token=bos_token,
+                    add_generation_prompt=True,
+                )
+                data: Dict = {
+                    "stream": True,
+                    "temperature": self.temperature,
+                    "prompt": prompt,
+                }
+                with requests.post(
+                    self.completion_url,
+                    headers=self.prompt_headers,
+                    json=data,
+                    stream=True,
+                ) as response:
+                    for line in response.iter_lines():
+                        if line:
+                            line = self._clean_raw_bytes(line)
+                            next_token = self._process_line(line)
+                            if next_token:
+                                if next_token == self.eot_token:
+                                    break
+                                yield next_token
         except Exception as e:
             logger.error(f"LLM API WITH TEMPLATE: Error occurred: {e}")
             logger.info(f"Base URL: {self.base_url}")

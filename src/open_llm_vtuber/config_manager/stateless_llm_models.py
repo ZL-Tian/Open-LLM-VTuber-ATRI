@@ -1,36 +1,49 @@
-# config_manager/llm.py
+# config_manager/stateless_llm_models.py
 from typing import ClassVar, Literal
+
 from pydantic import BaseModel, Field
-from .i18n import I18nMixin, Description
+
+from .i18n import Description, I18nMixin
 
 
 class StatelessLLMBaseConfig(I18nMixin):
-    """Base configuration for StatelessLLM."""
+    """Base configuration shared by stateless LLM backends."""
 
-    # interrupt_method. If the provider supports inserting system prompt anywhere in the chat memory, use "system". Otherwise, use "user".
     interrupt_method: Literal["system", "user"] = Field(
         "user", alias="interrupt_method"
     )
     max_concurrent_requests: int = Field(
         1, alias="max_concurrent_requests", ge=1
     )
+
     DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "interrupt_method": Description(
-            en="""The method to use for prompting the interruption signal.
-            If the provider supports inserting system prompt anywhere in the chat memory, use "system". 
-            Otherwise, use "user". You don't need to change this setting.""",
-            zh="""用于表示中断信号的方法(提示词模式)。如果LLM支持在聊天记忆中的任何位置插入系统提示词，请使用“system”。
-            否则，请使用“user”。您不需要更改此设置。""",
+            en=(
+                "How interruption signals are injected into the conversation. "
+                "Use 'system' if the provider supports inserting system messages "
+                "mid-conversation, otherwise use 'user'."
+            ),
+            zh=(
+                "How interruption signals are injected into the conversation. "
+                "Use 'system' if the provider supports inserting system messages "
+                "mid-conversation, otherwise use 'user'."
+            ),
         ),
         "max_concurrent_requests": Description(
-            en="Maximum number of concurrent requests allowed for this LLM backend. Set to 1 to fully serialize requests.",
-            zh="该 LLM 后端允许的最大并发请求数。设置为 1 时会完全串行发送请求。",
+            en=(
+                "Maximum number of concurrent requests allowed for this LLM backend. "
+                "Set to 1 to fully serialize requests."
+            ),
+            zh=(
+                "Maximum number of concurrent requests allowed for this LLM backend. "
+                "Set to 1 to fully serialize requests."
+            ),
         ),
     }
 
 
 class StatelessLLMWithTemplate(StatelessLLMBaseConfig):
-    """Configuration for OpenAI-compatible LLM providers."""
+    """Configuration for template-based stateless LLM backends."""
 
     base_url: str = Field(..., alias="base_url")
     llm_api_key: str = Field(..., alias="llm_api_key")
@@ -40,30 +53,45 @@ class StatelessLLMWithTemplate(StatelessLLMBaseConfig):
     template: str | None = Field(None, alias="template")
     temperature: float = Field(1.0, alias="temperature")
 
-    _OPENAI_COMPATIBLE_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
-        "base_url": Description(en="Base URL for the API endpoint", zh="API的URL端点"),
-        "llm_api_key": Description(en="API key for authentication", zh="API 认证密钥"),
+    _COMMON_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
+        "base_url": Description(
+            en="Base URL for the API endpoint.",
+            zh="Base URL for the API endpoint.",
+        ),
+        "llm_api_key": Description(
+            en="API key used to authenticate with the backend.",
+            zh="API key used to authenticate with the backend.",
+        ),
         "organization_id": Description(
-            en="Organization ID for the API (Optional)", zh="组织 ID (可选)"
+            en="Optional organization identifier for the backend.",
+            zh="Optional organization identifier for the backend.",
         ),
         "project_id": Description(
-            en="Project ID for the API (Optional)", zh="项目 ID (可选)"
+            en="Optional project identifier for the backend.",
+            zh="Optional project identifier for the backend.",
         ),
-        "model": Description(en="Name of the LLM model to use", zh="LLM 模型名称"),
+        "model": Description(
+            en="Model name to use for requests.",
+            zh="Model name to use for requests.",
+        ),
+        "template": Description(
+            en="Prompt template name used for non-ChatML models.",
+            zh="Prompt template name used for non-ChatML models.",
+        ),
         "temperature": Description(
-            en="What sampling temperature to use, between 0 and 2.",
-            zh="使用的采样温度，介于 0 和 2 之间。",
+            en="Sampling temperature, typically between 0 and 2.",
+            zh="Sampling temperature, typically between 0 and 2.",
         ),
     }
 
     DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         **StatelessLLMBaseConfig.DESCRIPTIONS,
-        **_OPENAI_COMPATIBLE_DESCRIPTIONS,
+        **_COMMON_DESCRIPTIONS,
     }
 
 
 class OpenAICompatibleConfig(StatelessLLMBaseConfig):
-    """Configuration for OpenAI-compatible LLM providers."""
+    """Configuration for OpenAI-compatible chat backends."""
 
     base_url: str = Field(..., alias="base_url")
     llm_api_key: str = Field(..., alias="llm_api_key")
@@ -72,33 +100,41 @@ class OpenAICompatibleConfig(StatelessLLMBaseConfig):
     project_id: str | None = Field(None, alias="project_id")
     temperature: float = Field(1.0, alias="temperature")
 
-    _OPENAI_COMPATIBLE_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
-        "base_url": Description(en="Base URL for the API endpoint", zh="API的URL端点"),
-        "llm_api_key": Description(en="API key for authentication", zh="API 认证密钥"),
+    _COMMON_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
+        "base_url": Description(
+            en="Base URL for the API endpoint.",
+            zh="Base URL for the API endpoint.",
+        ),
+        "llm_api_key": Description(
+            en="API key used to authenticate with the backend.",
+            zh="API key used to authenticate with the backend.",
+        ),
         "organization_id": Description(
-            en="Organization ID for the API (Optional)", zh="组织 ID (可选)"
+            en="Optional organization identifier for the backend.",
+            zh="Optional organization identifier for the backend.",
         ),
         "project_id": Description(
-            en="Project ID for the API (Optional)", zh="项目 ID (可选)"
+            en="Optional project identifier for the backend.",
+            zh="Optional project identifier for the backend.",
         ),
-        "model": Description(en="Name of the LLM model to use", zh="LLM 模型名称"),
+        "model": Description(
+            en="Model name to use for requests.",
+            zh="Model name to use for requests.",
+        ),
         "temperature": Description(
-            en="What sampling temperature to use, between 0 and 2.",
-            zh="使用的采样温度，介于 0 和 2 之间。",
+            en="Sampling temperature, typically between 0 and 2.",
+            zh="Sampling temperature, typically between 0 and 2.",
         ),
     }
 
     DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         **StatelessLLMBaseConfig.DESCRIPTIONS,
-        **_OPENAI_COMPATIBLE_DESCRIPTIONS,
+        **_COMMON_DESCRIPTIONS,
     }
 
 
-# Ollama config is completely the same as OpenAICompatibleConfig
-
-
 class OllamaConfig(OpenAICompatibleConfig):
-    """Configuration for Ollama API."""
+    """Configuration for Ollama."""
 
     llm_api_key: str = Field("default_api_key", alias="llm_api_key")
     keep_alive: float = Field(-1, alias="keep_alive")
@@ -107,20 +143,24 @@ class OllamaConfig(OpenAICompatibleConfig):
         "system", alias="interrupt_method"
     )
 
-    # Ollama-specific descriptions
     _OLLAMA_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "llm_api_key": Description(
-            en="API key for authentication (defaults to 'default_api_key' for Ollama)",
-            zh="API 认证密钥 (Ollama 默认为 'default_api_key')",
+            en="API key for Ollama. Defaults to 'default_api_key'.",
+            zh="API key for Ollama. Defaults to 'default_api_key'.",
         ),
         "keep_alive": Description(
-            en="Keep the model loaded for this many seconds after the last request. "
-            "Set to -1 to keep the model loaded indefinitely.",
-            zh="在最后一个请求之后保持模型加载的秒数。设置为 -1 以无限期保持模型加载。",
+            en=(
+                "Seconds to keep the model loaded after the last request. "
+                "Use -1 to keep it loaded indefinitely."
+            ),
+            zh=(
+                "Seconds to keep the model loaded after the last request. "
+                "Use -1 to keep it loaded indefinitely."
+            ),
         ),
         "unload_at_exit": Description(
-            en="Unload the model when the program exits.",
-            zh="是否在程序退出时卸载模型。",
+            en="Whether to unload the model when the process exits.",
+            zh="Whether to unload the model when the process exits.",
         ),
     }
 
@@ -141,7 +181,7 @@ class LmStudioConfig(OpenAICompatibleConfig):
 
 
 class OpenAIConfig(OpenAICompatibleConfig):
-    """Configuration for Official OpenAI API."""
+    """Configuration for the official OpenAI API."""
 
     base_url: str = Field("https://api.openai.com/v1", alias="base_url")
     interrupt_method: Literal["system", "user"] = Field(
@@ -150,7 +190,7 @@ class OpenAIConfig(OpenAICompatibleConfig):
 
 
 class GeminiConfig(OpenAICompatibleConfig):
-    """Configuration for Gemini API."""
+    """Configuration for Gemini's OpenAI-compatible endpoint."""
 
     base_url: str = Field(
         "https://generativelanguage.googleapis.com/v1beta/openai/", alias="base_url"
@@ -161,7 +201,7 @@ class GeminiConfig(OpenAICompatibleConfig):
 
 
 class MistralConfig(OpenAICompatibleConfig):
-    """Configuration for Mistral API."""
+    """Configuration for Mistral."""
 
     base_url: str = Field("https://api.mistral.ai/v1", alias="base_url")
     interrupt_method: Literal["system", "user"] = Field(
@@ -170,19 +210,19 @@ class MistralConfig(OpenAICompatibleConfig):
 
 
 class ZhipuConfig(OpenAICompatibleConfig):
-    """Configuration for Zhipu API."""
+    """Configuration for Zhipu."""
 
     base_url: str = Field("https://open.bigmodel.cn/api/paas/v4/", alias="base_url")
 
 
 class DeepseekConfig(OpenAICompatibleConfig):
-    """Configuration for Deepseek API."""
+    """Configuration for DeepSeek."""
 
     base_url: str = Field("https://api.deepseek.com/v1", alias="base_url")
 
 
 class GroqConfig(OpenAICompatibleConfig):
-    """Configuration for Groq API."""
+    """Configuration for Groq."""
 
     base_url: str = Field("https://api.groq.com/openai/v1", alias="base_url")
     interrupt_method: Literal["system", "user"] = Field(
@@ -191,7 +231,7 @@ class GroqConfig(OpenAICompatibleConfig):
 
 
 class ClaudeConfig(StatelessLLMBaseConfig):
-    """Configuration for OpenAI Official API."""
+    """Configuration for Claude."""
 
     base_url: str = Field("https://api.anthropic.com", alias="base_url")
     llm_api_key: str = Field(..., alias="llm_api_key")
@@ -202,11 +242,16 @@ class ClaudeConfig(StatelessLLMBaseConfig):
 
     _CLAUDE_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "base_url": Description(
-            en="Base URL for Claude API", zh="Claude API 的API端点"
+            en="Base URL for the Claude API.",
+            zh="Base URL for the Claude API.",
         ),
-        "llm_api_key": Description(en="API key for authentication", zh="API 认证密钥"),
+        "llm_api_key": Description(
+            en="API key used to authenticate with Claude.",
+            zh="API key used to authenticate with Claude.",
+        ),
         "model": Description(
-            en="Name of the Claude model to use", zh="要使用的 Claude 模型名称"
+            en="Claude model name to use for requests.",
+            zh="Claude model name to use for requests.",
         ),
     }
 
@@ -217,7 +262,7 @@ class ClaudeConfig(StatelessLLMBaseConfig):
 
 
 class LlamaCppConfig(StatelessLLMBaseConfig):
-    """Configuration for LlamaCpp."""
+    """Configuration for local llama.cpp."""
 
     model_path: str = Field(..., alias="model_path")
     interrupt_method: Literal["system", "user"] = Field(
@@ -226,7 +271,8 @@ class LlamaCppConfig(StatelessLLMBaseConfig):
 
     _LLAMA_DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "model_path": Description(
-            en="Path to the GGUF model file", zh="GGUF 模型文件路径"
+            en="Filesystem path to the GGUF model file.",
+            zh="Filesystem path to the GGUF model file.",
         ),
     }
 
@@ -237,8 +283,7 @@ class LlamaCppConfig(StatelessLLMBaseConfig):
 
 
 class StatelessLLMConfigs(I18nMixin, BaseModel):
-    """Pool of LLM provider configurations.
-    This class contains configurations for different LLM providers."""
+    """Collection of stateless LLM provider configurations."""
 
     stateless_llm_with_template: StatelessLLMWithTemplate | None = Field(
         None, alias="stateless_llm_with_template"
@@ -259,34 +304,51 @@ class StatelessLLMConfigs(I18nMixin, BaseModel):
 
     DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "stateless_llm_with_template": Description(
-            en="Stateless LLM with Template", zh=""
+            en="Configuration for template-based stateless LLM backends.",
+            zh="Configuration for template-based stateless LLM backends.",
         ),
         "openai_compatible_llm": Description(
-            en="Configuration for OpenAI-compatible LLM providers",
-            zh="OpenAI兼容的语言模型提供者配置",
+            en="Configuration for OpenAI-compatible LLM providers.",
+            zh="Configuration for OpenAI-compatible LLM providers.",
         ),
-        "ollama_llm": Description(en="Configuration for Ollama", zh="Ollama 配置"),
+        "ollama_llm": Description(
+            en="Configuration for Ollama.",
+            zh="Configuration for Ollama.",
+        ),
         "lmstudio_llm": Description(
-            en="Configuration for LM Studio", zh="LM Studio 配置"
+            en="Configuration for LM Studio.",
+            zh="Configuration for LM Studio.",
         ),
         "openai_llm": Description(
-            en="Configuration for Official OpenAI API", zh="官方 OpenAI API 配置"
+            en="Configuration for the official OpenAI API.",
+            zh="Configuration for the official OpenAI API.",
         ),
         "gemini_llm": Description(
-            en="Configuration for Gemini API", zh="Gemini API 配置"
+            en="Configuration for Gemini.",
+            zh="Configuration for Gemini.",
         ),
         "mistral_llm": Description(
-            en="Configuration for Mistral API", zh="Mistral API 配置"
+            en="Configuration for Mistral.",
+            zh="Configuration for Mistral.",
         ),
-        "zhipu_llm": Description(en="Configuration for Zhipu API", zh="Zhipu API 配置"),
+        "zhipu_llm": Description(
+            en="Configuration for Zhipu.",
+            zh="Configuration for Zhipu.",
+        ),
         "deepseek_llm": Description(
-            en="Configuration for Deepseek API", zh="Deepseek API 配置"
+            en="Configuration for DeepSeek.",
+            zh="Configuration for DeepSeek.",
         ),
-        "groq_llm": Description(en="Configuration for Groq API", zh="Groq API 配置"),
+        "groq_llm": Description(
+            en="Configuration for Groq.",
+            zh="Configuration for Groq.",
+        ),
         "claude_llm": Description(
-            en="Configuration for Claude API", zh="Claude API配置"
+            en="Configuration for Claude.",
+            zh="Configuration for Claude.",
         ),
         "llama_cpp_llm": Description(
-            en="Configuration for local Llama.cpp", zh="本地Llama.cpp配置"
+            en="Configuration for local llama.cpp.",
+            zh="Configuration for local llama.cpp.",
         ),
     }
