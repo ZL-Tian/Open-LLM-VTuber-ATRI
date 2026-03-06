@@ -26,5 +26,36 @@
                 "": 1
             }
         }
+    },
+    {
+        "name": "atri",
+        "description": "",
+        "url": "/live2d-models/atri/runtime/atri_8.model3.json",
+        "kScale": 0.5,
+        "initialXshift": 0,
+        "initialYshift": 0,
+        "kXOffset": 1150,
+        "idleMotionGroupName": "Idle",
+        "emotionMap": {
+            "neutral": 0,
+            "anger": 1,
+            "disgust": 1,
+            "fear": 1,
+            "shy": 17,
+            "happy": 16,
+            "sadness": 1,
+            "surprise": 6,
+            "yes": 12,
+            "no": 11,
+            "like":17
+        },
+        "tapMotions": {
+            "HitAreaHead": {
+                "": 1
+            },
+            "HitAreaBody": {
+                "": 1
+            }
+        }
     }
 ]

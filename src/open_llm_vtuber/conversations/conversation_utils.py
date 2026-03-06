@@ -8,7 +8,7 @@ from loguru import logger
 from ..message_handler import message_handler
 from .types import WebSocketSend, BroadcastContext
 from .tts_manager import TTSTaskManager
-from ..agent.output_types import SentenceOutput, AudioOutput
+from ..agent.output_types import SentenceOutput, AudioOutput, DisplayText
 from ..agent.input_types import BatchInput, TextData, ImageData, TextSource, ImageSource
 from ..asr.asr_interface import ASRInterface
 from ..live2d_model import Live2dModel
@@ -40,6 +40,55 @@ def create_batch_input(
         else None,
         metadata=metadata,
     )
+
+
+def _split_text_for_realtime_tts(text: str, max_chunk_chars: int = 48) -> List[str]:
+    """
+    Split long text into smaller chunks for better translation/TTS responsiveness.
+    Prefer punctuation boundaries; fallback to fixed-size chunks.
+    """
+    if not text:
+        return []
+    if len(text) <= max_chunk_chars:
+        return [text]
+
+    separators = set("。！？!?；;，,\n")
+    chunks: List[str] = []
+    buf: List[str] = []
+
+    for ch in text:
+        buf.append(ch)
+        should_split = ch in separators or len(buf) >= max_chunk_chars
+        if should_split:
+            chunk = "".join(buf).strip()
+            if chunk:
+                chunks.append(chunk)
+            buf = []
+
+    if buf:
+        chunk = "".join(buf).strip()
+        if chunk:
+            chunks.append(chunk)
+
+    return chunks if chunks else [text]
+
+
+async def _translate_text_if_needed(
+    text: str,
+    translate_engine: Optional[Any],
+) -> str:
+    """Translate non-empty text in a worker thread when translation is enabled."""
+    if not translate_engine:
+        return text
+
+    if not len(re.sub(r"[\s.,!?，。！？、\"“”'\(\)\[\]]+", "", text)):
+        return text
+
+    try:
+        return await asyncio.to_thread(translate_engine.translate, text)
+    except Exception as e:
+        logger.warning(f"Translation failed, fallback to source text: {e}")
+        return text
 
 
 async def process_agent_output(
@@ -92,24 +141,43 @@ async def handle_sentence_output(
     """Handle sentence output type with optional translation support"""
     full_response = ""
     async for display_text, tts_text, actions in output:
-        logger.debug(f"🏃 Processing output: '''{tts_text}'''...")
-
-        if translate_engine:
-            if len(re.sub(r'[\s.,!?，。！？\'"』」）】\s]+', "", tts_text)):
-                tts_text = translate_engine.translate(tts_text)
-            logger.info(f"🏃 Text after translation: '''{tts_text}'''...")
-        else:
-            logger.debug("🚫 No translation engine available. Skipping translation.")
+        logger.debug(f"Processing output: '''{tts_text}'''...")
 
         full_response += display_text.text
-        await tts_manager.speak(
-            tts_text=tts_text,
-            display_text=display_text,
-            actions=actions,
-            live2d_model=live2d_model,
-            tts_engine=tts_engine,
-            websocket_send=websocket_send,
-        )
+
+        # Translate and synthesize in smaller chunks so speech starts earlier.
+        display_chunks = _split_text_for_realtime_tts(display_text.text)
+        tts_chunks = _split_text_for_realtime_tts(tts_text) if tts_text else [""]
+        chunk_count = max(len(display_chunks), len(tts_chunks))
+
+        for idx in range(chunk_count):
+            display_chunk = display_chunks[idx] if idx < len(display_chunks) else ""
+            tts_chunk = tts_chunks[idx] if idx < len(tts_chunks) else ""
+
+            translated_tts_chunk = await _translate_text_if_needed(
+                tts_chunk, translate_engine
+            )
+
+            if translate_engine and tts_chunk:
+                logger.info(
+                    f"Chunk translated: '''{tts_chunk}''' -> '''{translated_tts_chunk}'''"
+                )
+
+            if not display_chunk and not translated_tts_chunk:
+                continue
+
+            await tts_manager.speak(
+                tts_text=translated_tts_chunk,
+                display_text=DisplayText(
+                    text=display_chunk,
+                    name=display_text.name,
+                    avatar=display_text.avatar,
+                ),
+                actions=actions if idx == 0 else None,
+                live2d_model=live2d_model,
+                tts_engine=tts_engine,
+                websocket_send=websocket_send,
+            )
     return full_response
 
 
@@ -291,3 +359,4 @@ EMOJI_LIST = [
     "👜",
     "👑",
 ]
+

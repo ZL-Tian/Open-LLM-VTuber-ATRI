@@ -3,6 +3,7 @@ import hmac
 import json
 import time
 from datetime import datetime, timezone
+import os
 
 import httpx
 from loguru import logger
@@ -25,6 +26,9 @@ class TencentTranslate(TranslateInterface):
         source_lang: str = "zh",
         target_lang: str = "ja",
     ):
+        secret_id = os.environ.get("TENCENT_SECRET_ID")
+        secret_key = os.environ.get("TENCENT_SECRET_KEY")
+        logger.info(f"Initializing TencentTranslate with secret_id: {secret_id}, region: {region}")
         self.secret_id = secret_id
         self.secret_key = secret_key
         self.token = token

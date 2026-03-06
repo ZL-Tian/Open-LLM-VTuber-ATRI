@@ -24,6 +24,7 @@ from .types import (
 from ..service_context import ServiceContext
 from ..chat_history_manager import store_message
 from .tts_manager import TTSTaskManager
+from .tool_call_feedback import ToolCallFeedbackManager
 
 
 async def process_group_conversation(
@@ -348,6 +349,15 @@ async def process_member_response(
 ) -> str:
     """Process group member's response, handling text/audio and tool status events."""
     full_response = ""
+    tool_feedback_manager = ToolCallFeedbackManager(
+        tts_manager=tts_manager,
+        live2d_model=context.live2d_model,
+        tts_engine=context.tts_engine,
+        websocket_send=current_ws_send,
+        character_name=context.character_config.character_name,
+        character_avatar=context.character_config.avatar,
+        translate_engine=context.translate_engine,
+    )
 
     try:
         # agent.chat now yields Union[SentenceOutput, Dict[str, Any]]
@@ -358,6 +368,7 @@ async def process_member_response(
                 isinstance(output_item, dict)
                 and output_item.get("type") == "tool_call_status"
             ):
+                await tool_feedback_manager.handle_tool_status(output_item)
                 if broadcast_func and group_members:
                     logger.debug(f"Broadcasting tool status update: {output_item}")
                     output_item["name"] = context.character_config.character_name
@@ -390,5 +401,7 @@ async def process_member_response(
                 {"type": "error", "message": f"Error processing response: {str(e)}"}
             )
         )
+    finally:
+        await tool_feedback_manager.stop()
 
     return full_response

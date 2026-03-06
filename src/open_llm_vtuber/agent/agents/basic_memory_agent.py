@@ -307,7 +307,6 @@ class BasicMemoryAgent(AgentInterface):
                 if event["type"] == "text_delta":
                     text = event["text"]
                     current_turn_text += text
-                    yield text
                     if (
                         not current_assistant_message_content
                         or current_assistant_message_content[-1]["type"] != "text"
@@ -355,15 +354,10 @@ class BasicMemoryAgent(AgentInterface):
                     messages.append(
                         {"role": "assistant", "content": filtered_assistant_content}
                     )
-                    assistant_text_for_memory = "".join(
-                        [
-                            c["text"]
-                            for c in filtered_assistant_content
-                            if c["type"] == "text"
-                        ]
-                    ).strip()
-                    if assistant_text_for_memory:
-                        self._add_message(assistant_text_for_memory, "assistant")
+                    if current_turn_text.strip():
+                        logger.debug(
+                            "Suppressed assistant text from a Claude tool-calling turn."
+                        )
 
                 tool_results_for_llm = []
                 if not self._tool_executor:
@@ -397,6 +391,7 @@ class BasicMemoryAgent(AgentInterface):
                 continue
             else:
                 if current_turn_text:
+                    yield current_turn_text
                     self._add_message(current_turn_text, "assistant")
                 return
 
@@ -456,11 +451,9 @@ class BasicMemoryAgent(AgentInterface):
                                     yield f"[Error parsing tool JSON: {e}]"
                                     goto_next_while_iteration = True
                                     break
-                        yield event
                 else:
                     if isinstance(event, str):
                         current_turn_text += event
-                        yield event
                     elif isinstance(event, list) and all(
                         isinstance(tc, ToolCallObject) for tc in event
                     ):
@@ -497,7 +490,10 @@ class BasicMemoryAgent(AgentInterface):
 
             if detected_prompt_json:
                 logger.info("Processing tools detected via prompt mode JSON.")
-                self._add_message(current_turn_text, "assistant")
+                if current_turn_text.strip():
+                    logger.debug(
+                        "Suppressed assistant text from a prompt-mode tool-calling turn."
+                    )
 
                 parsed_tools = self._tool_executor.process_tool_from_prompt_json(
                     detected_prompt_json
@@ -542,7 +538,9 @@ class BasicMemoryAgent(AgentInterface):
             elif pending_tool_calls and assistant_message_for_api:
                 messages.append(assistant_message_for_api)
                 if current_turn_text:
-                    self._add_message(current_turn_text, "assistant")
+                    logger.debug(
+                        "Suppressed assistant text from an OpenAI tool-calling turn."
+                    )
 
                 tool_results_for_llm = []
                 if not self._tool_executor:
@@ -575,6 +573,7 @@ class BasicMemoryAgent(AgentInterface):
 
             else:
                 if current_turn_text:
+                    yield current_turn_text
                     self._add_message(current_turn_text, "assistant")
                 return
 

@@ -7,6 +7,21 @@
       "ddg-search": {
         "command": "uvx",
         "args": ["duckduckgo-mcp-server"]
+      },
+      "audio-player": {
+        "command": "D:\\Projects\\Open-LLM-VTuber\\.venv\\Scripts\\python.exe", 
+        "args": [
+          "D:\\Projects\\Open-LLM-VTuber\\mcp_tools\\audio-player-mcp\\src\\audio_player_mcp\\player.py"
+        ],
+        "env": {
+          "AUDIO_PLAYER_DIR": "D:\\Projects\\Open-LLM-VTuber-ATRI\\atri_musics"
+        }
+      },
+      "sing-server": {
+        "command": "D:\\Projects\\Open-LLM-VTuber\\.venv\\Scripts\\python.exe", 
+        "args": [
+          "D:\\Projects\\Open-LLM-VTuber\\mcp_tools\\sing-mcp\\src\\player.py"
+        ]
       }
     }
 }

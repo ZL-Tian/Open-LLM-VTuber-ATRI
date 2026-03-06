@@ -15,6 +15,7 @@ from .conversation_utils import (
 )
 from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
+from .tool_call_feedback import ToolCallFeedbackManager
 from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
 
@@ -47,6 +48,15 @@ async def process_single_conversation(
     """
     # Create TTSTaskManager for this conversation
     tts_manager = TTSTaskManager()
+    tool_feedback_manager = ToolCallFeedbackManager(
+        tts_manager=tts_manager,
+        live2d_model=context.live2d_model,
+        tts_engine=context.tts_engine,
+        websocket_send=websocket_send,
+        character_name=context.character_config.character_name,
+        character_avatar=context.character_config.avatar,
+        translate_engine=context.translate_engine,
+    )
     full_response = ""  # Initialize full_response here
 
     try:
@@ -99,6 +109,7 @@ async def process_single_conversation(
                     logger.debug(f"Sending tool status update: {output_item}")
 
                     await websocket_send(json.dumps(output_item))
+                    await tool_feedback_manager.handle_tool_status(output_item)
 
                 elif isinstance(output_item, (SentenceOutput, AudioOutput)):
                     # Handle SentenceOutput or AudioOutput
@@ -171,4 +182,5 @@ async def process_single_conversation(
         )
         raise
     finally:
+        await tool_feedback_manager.stop()
         cleanup_conversation(tts_manager, session_emoji)
