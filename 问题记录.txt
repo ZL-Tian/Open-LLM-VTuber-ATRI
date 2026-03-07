@@ -1,3 +1,0 @@
-用魔塔加速下载模型：
-# 格式为：modelscope.cn + gguf模型地址
-ollama pull modelscope.cn/Qwen/Qwen3-8B-GGUF
