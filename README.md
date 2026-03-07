@@ -1,4 +1,4 @@
-![](./assets/banner.jpg)
+﻿![](./assets/banner.jpg)
 
 # Open-LLM-VTuber-ATRI
 
@@ -9,8 +9,6 @@
 Open-LLM-VTuber-ATRI 旨在提供一个可落地运行的 ATRI 角色方案，覆盖角色形象、语音、交互能力和基础运行配置。当前仓库主要围绕 Windows 环境进行整理，适合作为本地部署和二次开发的基础版本。
 
 ## Windows 配置流程
-
-以下流程根据 `开发文档.docx` 中“配置方法：（Windows）”整理，并按常见开源项目的部署方式重写。
 
 ### 1. 环境准备
 
