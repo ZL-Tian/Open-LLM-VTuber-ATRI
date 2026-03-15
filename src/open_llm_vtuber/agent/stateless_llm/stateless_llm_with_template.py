@@ -95,6 +95,7 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         template: str = "CHATML",
         temperature: float = 1.0,
         max_concurrent_requests: int = 1,
+        min_request_interval_seconds: float = 0.0,
     ):
         """
         Initializes an instance of the `AsyncLLM` class.
@@ -113,6 +114,7 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         self.model = model
         self.temperature = temperature
         self.max_concurrent_requests = max(1, int(max_concurrent_requests))
+        self.min_request_interval_seconds = max(0.0, float(min_request_interval_seconds))
         self.template = Template(TEMPLATES[template]["template"])
         self.eot_token = TEMPLATES[template]["eot_token"]
         self.prompt_headers = {
@@ -127,7 +129,8 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         )
         logger.info(
             "Initialized AsyncLLM with the parameters: "
-            f"{self.completion_url} ({template}), max_concurrent_requests={self.max_concurrent_requests}"
+            f"{self.completion_url} ({template}), max_concurrent_requests={self.max_concurrent_requests}, "
+            f"min_request_interval_seconds={self.min_request_interval_seconds}"
         )
 
     async def chat_completion(
@@ -153,7 +156,9 @@ class AsyncLLMWithTemplate(StatelessLLMInterface):
         stream = None
         try:
             async with limit_request_concurrency(
-                self._limiter_key, self.max_concurrent_requests
+                self._limiter_key,
+                self.max_concurrent_requests,
+                self.min_request_interval_seconds,
             ):
                 # If system prompt is provided, add it to the messages
                 messages_with_system: List[Dict[str, Any]] = messages

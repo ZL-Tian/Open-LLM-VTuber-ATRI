@@ -173,6 +173,11 @@ class BasicMemoryAgent(AgentInterface):
 
         self._memory.append(message_data)
 
+    @staticmethod
+    def _build_missing_final_reply_message() -> str:
+        """Return a safe user-facing fallback when the post-tool LLM turn is empty."""
+        return "Error: The tool finished, but the model did not produce a final reply. Please try again."
+
     def set_memory_from_history(self, conf_uid: str, history_uid: str) -> None:
         """Load memory from chat history."""
         messages = get_history(conf_uid, history_uid)
@@ -297,6 +302,7 @@ class BasicMemoryAgent(AgentInterface):
         current_turn_text = ""
         pending_tool_calls = []
         current_assistant_message_content = []
+        last_tool_results_for_llm: List[Dict[str, Any]] = []
 
         while True:
             stream = self._llm.chat_completion(messages, self._system, tools=tools)
@@ -385,6 +391,7 @@ class BasicMemoryAgent(AgentInterface):
                     )
 
                 if tool_results_for_llm:
+                    last_tool_results_for_llm = list(tool_results_for_llm)
                     messages.append({"role": "user", "content": tool_results_for_llm})
 
                 # stop_reason = None
@@ -393,6 +400,14 @@ class BasicMemoryAgent(AgentInterface):
                 if current_turn_text:
                     yield current_turn_text
                     self._add_message(current_turn_text, "assistant")
+                elif last_tool_results_for_llm:
+                    fallback_text = self._build_missing_final_reply_message()
+                    logger.warning(
+                        "Claude tool follow-up returned no assistant text. "
+                        "Returning a generic fallback message instead of exposing "
+                        "intermediate tool results to the user."
+                    )
+                    yield fallback_text
                 return
 
     async def _openai_tool_interaction_loop(
@@ -405,6 +420,7 @@ class BasicMemoryAgent(AgentInterface):
         current_turn_text = ""
         pending_tool_calls: Union[List[ToolCallObject], List[Dict[str, Any]]] = []
         current_system_prompt = self._system
+        last_tool_results_for_llm: List[Dict[str, Any]] = []
 
         while True:
             if self.prompt_mode_flag:
@@ -498,8 +514,8 @@ class BasicMemoryAgent(AgentInterface):
                 parsed_tools = self._tool_executor.process_tool_from_prompt_json(
                     detected_prompt_json
                 )
+                tool_results_for_llm = []
                 if parsed_tools:
-                    tool_results_for_llm = []
                     if not self._tool_executor:
                         logger.error(
                             "Prompt Tool interaction requested but ToolExecutor/MCPClient is not available."
@@ -524,15 +540,16 @@ class BasicMemoryAgent(AgentInterface):
                             "Prompt mode tool executor finished without final results marker."
                         )
 
-                    if tool_results_for_llm:
-                        result_strings = [
-                            res.get("content", "Error: Malformed result")
-                            for res in tool_results_for_llm
-                        ]
-                        combined_results_str = "\n".join(result_strings)
-                        messages.append(
-                            {"role": "user", "content": combined_results_str}
-                        )
+                if tool_results_for_llm:
+                    last_tool_results_for_llm = list(tool_results_for_llm)
+                    result_strings = [
+                        res.get("content", "Error: Malformed result")
+                        for res in tool_results_for_llm
+                    ]
+                    combined_results_str = "\n".join(result_strings)
+                    messages.append(
+                        {"role": "user", "content": combined_results_str}
+                    )
                 continue
 
             elif pending_tool_calls and assistant_message_for_api:
@@ -568,6 +585,7 @@ class BasicMemoryAgent(AgentInterface):
                     )
 
                 if tool_results_for_llm:
+                    last_tool_results_for_llm = list(tool_results_for_llm)
                     messages.extend(tool_results_for_llm)
                 continue
 
@@ -575,6 +593,14 @@ class BasicMemoryAgent(AgentInterface):
                 if current_turn_text:
                     yield current_turn_text
                     self._add_message(current_turn_text, "assistant")
+                elif last_tool_results_for_llm:
+                    fallback_text = self._build_missing_final_reply_message()
+                    logger.warning(
+                        "OpenAI tool follow-up returned no assistant text. "
+                        "Returning a generic fallback message instead of exposing "
+                        "intermediate tool results to the user."
+                    )
+                    yield fallback_text
                 return
 
     def _chat_function_factory(

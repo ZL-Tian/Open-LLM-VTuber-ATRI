@@ -21,6 +21,7 @@ class AsyncLLM(StatelessLLMInterface):
         llm_api_key: str = None,
         system: str = None,
         max_concurrent_requests: int = 1,
+        min_request_interval_seconds: float = 0.0,
     ):
         """
         Initialize Claude LLM.
@@ -34,6 +35,7 @@ class AsyncLLM(StatelessLLMInterface):
         self.model = model
         self.system = system
         self.max_concurrent_requests = max(1, int(max_concurrent_requests))
+        self.min_request_interval_seconds = max(0.0, float(min_request_interval_seconds))
 
         # Initialize Claude client
         self.client = AsyncAnthropic(
@@ -47,7 +49,8 @@ class AsyncLLM(StatelessLLMInterface):
 
         logger.info(
             "Initialized Claude AsyncLLM with model: "
-            f"{self.model}, max_concurrent_requests={self.max_concurrent_requests}"
+            f"{self.model}, max_concurrent_requests={self.max_concurrent_requests}, "
+            f"min_request_interval_seconds={self.min_request_interval_seconds}"
         )
         logger.debug(f"Base URL: {base_url}")
 
@@ -121,7 +124,9 @@ class AsyncLLM(StatelessLLMInterface):
         """
         try:
             async with limit_request_concurrency(
-                self._limiter_key, self.max_concurrent_requests
+                self._limiter_key,
+                self.max_concurrent_requests,
+                self.min_request_interval_seconds,
             ):
                 # Filter out system messages and convert message format
                 converted_messages = [

@@ -40,6 +40,9 @@ class LLMFactory:
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
                 max_concurrent_requests=kwargs.get("max_concurrent_requests"),
+                min_request_interval_seconds=kwargs.get(
+                    "min_request_interval_seconds"
+                ),
             )
         if llm_provider == "stateless_llm_with_template":
             return StatelessLLMWithTemplate(
@@ -51,6 +54,9 @@ class LLMFactory:
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
                 max_concurrent_requests=kwargs.get("max_concurrent_requests"),
+                min_request_interval_seconds=kwargs.get(
+                    "min_request_interval_seconds"
+                ),
             )
         if llm_provider == "ollama_llm":
             return OllamaLLM(
@@ -61,6 +67,9 @@ class LLMFactory:
                 project_id=kwargs.get("project_id"),
                 temperature=kwargs.get("temperature"),
                 max_concurrent_requests=kwargs.get("max_concurrent_requests"),
+                min_request_interval_seconds=kwargs.get(
+                    "min_request_interval_seconds"
+                ),
                 keep_alive=kwargs.get("keep_alive"),
                 unload_at_exit=kwargs.get("unload_at_exit"),
             )
@@ -78,6 +87,9 @@ class LLMFactory:
                 model=kwargs.get("model"),
                 llm_api_key=kwargs.get("llm_api_key"),
                 max_concurrent_requests=kwargs.get("max_concurrent_requests"),
+                min_request_interval_seconds=kwargs.get(
+                    "min_request_interval_seconds"
+                ),
             )
         else:
             raise ValueError(f"Unsupported LLM provider: {llm_provider}")

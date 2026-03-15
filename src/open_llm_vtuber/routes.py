@@ -12,6 +12,132 @@ from .websocket_handler import WebSocketHandler
 from .proxy_handler import ProxyHandler
 
 
+def _load_live2d_models_from_model_dict() -> list[dict]:
+    """Load Live2D model metadata from model_dict.json when available."""
+    model_dict_path = "model_dict.json"
+    if not os.path.isfile(model_dict_path):
+        return []
+
+    try:
+        with open(model_dict_path, "r", encoding="utf-8") as f:
+            model_entries = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to read {model_dict_path}: {e}")
+        return []
+
+    if not isinstance(model_entries, list):
+        logger.warning(f"Unexpected format in {model_dict_path}: expected a list")
+        return []
+
+    supported_extensions = [".png", ".jpg", ".jpeg"]
+    valid_characters = []
+
+    for entry in model_entries:
+        if not isinstance(entry, dict):
+            continue
+
+        name = entry.get("name")
+        model_url = entry.get("url")
+        if not name or not model_url or not isinstance(model_url, str):
+            continue
+
+        local_model_path = model_url.lstrip("/").replace("/", os.sep)
+        if not os.path.isfile(local_model_path):
+            logger.warning(
+                f"Skipping Live2D model '{name}' because file does not exist: {local_model_path}"
+            )
+            continue
+
+        model_dir = os.path.dirname(local_model_path)
+        character_dir = os.path.join("live2d-models", name)
+
+        avatar_file = None
+        avatar_candidates = []
+        for ext in supported_extensions:
+            avatar_candidates.extend(
+                [
+                    os.path.join(model_dir, f"{name}{ext}"),
+                    os.path.join(model_dir, f"icon{ext}"),
+                    os.path.join(character_dir, f"{name}{ext}"),
+                    os.path.join(character_dir, f"icon{ext}"),
+                ]
+            )
+
+        for avatar_path in avatar_candidates:
+            if os.path.isfile(avatar_path):
+                avatar_file = avatar_path.replace("\\", "/")
+                break
+
+        valid_characters.append(
+            {
+                "name": name,
+                "avatar": avatar_file,
+                "model_path": model_url,
+            }
+        )
+
+    return valid_characters
+
+
+def _scan_live2d_models_from_directory() -> list[dict]:
+    """Fallback scan for legacy directory layouts when model_dict.json is unavailable."""
+    live2d_dir = "live2d-models"
+    if not os.path.exists(live2d_dir):
+        return []
+
+    supported_extensions = [".png", ".jpg", ".jpeg"]
+    valid_characters = []
+
+    for entry in os.scandir(live2d_dir):
+        if not entry.is_dir():
+            continue
+
+        folder_name = entry.name.replace("\\", "/")
+        runtime_dir = os.path.join(live2d_dir, folder_name, "runtime")
+        model_candidates = [
+            os.path.join(live2d_dir, folder_name, f"{folder_name}.model3.json"),
+            os.path.join(runtime_dir, f"{folder_name}.model3.json"),
+        ]
+
+        model3_file = next((p for p in model_candidates if os.path.isfile(p)), None)
+        if not model3_file and os.path.isdir(runtime_dir):
+            runtime_models = [
+                os.path.join(runtime_dir, f)
+                for f in os.listdir(runtime_dir)
+                if f.endswith(".model3.json")
+            ]
+            if runtime_models:
+                model3_file = runtime_models[0]
+
+        if not model3_file:
+            continue
+
+        avatar_file = None
+        for ext in supported_extensions:
+            avatar_candidates = [
+                os.path.join(os.path.dirname(model3_file), f"{folder_name}{ext}"),
+                os.path.join(os.path.dirname(model3_file), f"icon{ext}"),
+                os.path.join(live2d_dir, folder_name, f"{folder_name}{ext}"),
+                os.path.join(live2d_dir, folder_name, f"icon{ext}"),
+            ]
+            avatar_file = next(
+                (p.replace("\\", "/") for p in avatar_candidates if os.path.isfile(p)),
+                None,
+            )
+            if avatar_file:
+                break
+
+        valid_characters.append(
+            {
+                "name": folder_name,
+                "avatar": avatar_file,
+                "model_path": f"/{model3_file.replace(os.sep, '/')}",
+            }
+        )
+
+    return valid_characters
+
+
 def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
     """
     Create and return API routes for handling the `/client-ws` WebSocket connections.
@@ -96,40 +222,15 @@ def init_webtool_routes(default_context_cache: ServiceContext) -> APIRouter:
     @router.get("/live2d-models/info")
     async def get_live2d_folder_info():
         """Get information about available Live2D models"""
-        live2d_dir = "live2d-models"
-        if not os.path.exists(live2d_dir):
+        if not os.path.exists("live2d-models"):
             return JSONResponse(
                 {"error": "Live2D models directory not found"}, status_code=404
             )
 
-        valid_characters = []
-        supported_extensions = [".png", ".jpg", ".jpeg"]
+        valid_characters = _load_live2d_models_from_model_dict()
+        if not valid_characters:
+            valid_characters = _scan_live2d_models_from_directory()
 
-        for entry in os.scandir(live2d_dir):
-            if entry.is_dir():
-                folder_name = entry.name.replace("\\", "/")
-                model3_file = os.path.join(
-                    live2d_dir, folder_name, f"{folder_name}.model3.json"
-                ).replace("\\", "/")
-
-                if os.path.isfile(model3_file):
-                    # Find avatar file if it exists
-                    avatar_file = None
-                    for ext in supported_extensions:
-                        avatar_path = os.path.join(
-                            live2d_dir, folder_name, f"{folder_name}{ext}"
-                        )
-                        if os.path.isfile(avatar_path):
-                            avatar_file = avatar_path.replace("\\", "/")
-                            break
-
-                    valid_characters.append(
-                        {
-                            "name": folder_name,
-                            "avatar": avatar_file,
-                            "model_path": model3_file,
-                        }
-                    )
         return JSONResponse(
             {
                 "type": "live2d-models/info",

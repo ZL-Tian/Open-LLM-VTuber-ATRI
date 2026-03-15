@@ -104,6 +104,119 @@ uv run run_server.py
 
 如果已经安装桌面客户端，也可以直接点击桌面的 `open-llm-vtuber` 应用图标启动图形界面。
 
+## 手机端远程访问配置
+
+以下流程用于将本项目通过公网域名暴露给手机浏览器访问，示例方案基于 Windows + Cloudflare Tunnel。
+
+### 1. 启动本项目服务
+
+请先在项目根目录启动服务：
+
+```powershell
+cd <Open-LLM-VTuber-ATRI目录>
+uv run run_server.py
+```
+
+### 2. 准备域名
+
+请先准备一个已完成实名认证的域名，并将域名 DNS 托管到 Cloudflare。
+
+完成后，确认该域名已经出现在 Cloudflare 控制台中，后续 Tunnel 将使用该域名作为公网入口。
+
+### 3. 安装并登录 cloudflared
+
+下载 `cloudflared-windows-amd64.exe`，重命名为 `cloudflared.exe`，例如放置在：
+
+```text
+D:\cloudflared\
+```
+
+执行 Cloudflare 登录授权：
+
+```powershell
+cd D:\cloudflared
+.\cloudflared.exe login
+```
+
+登录完成后会生成 `cert.pem`。如需统一管理，可将其移动到 `D:\cloudflared\` 目录。
+
+### 4. 创建 Tunnel
+
+创建一个专用于本项目的 Tunnel：
+
+```powershell
+cd D:\cloudflared
+.\cloudflared.exe tunnel create atri-tunnel
+```
+
+创建完成后会得到一个凭证文件。建议将其移动到固定目录，并命名为：
+
+```text
+D:\cloudflared\atri-tunnel.json
+```
+
+### 5. 编写 Tunnel 配置文件
+
+在 `D:\cloudflared\config.yml` 中写入如下配置：
+
+```yaml
+tunnel: atri-tunnel
+credentials-file: D:\cloudflared\atri-tunnel.json
+ingress:
+  - hostname: yourdomain
+    service: http://localhost:12393
+  - service: http_status:404
+```
+
+其中：
+
+- `hostname` 替换为你自己的公网域名
+- `service` 指向本项目本地监听的地址和端口
+
+### 6. 将域名绑定到 Tunnel
+
+执行以下命令，让 Cloudflare 自动创建对应的 DNS 记录：
+
+```powershell
+cd D:\cloudflared
+.\cloudflared.exe tunnel route dns atri-tunnel yourdomain
+```
+
+完成后，可在 Cloudflare DNS 面板中看到一条指向 Tunnel 的 CNAME 记录。
+
+### 7. 启动 Tunnel
+
+使用配置文件启动 Tunnel：
+
+```powershell
+cd D:\cloudflared
+.\cloudflared.exe tunnel --config D:\cloudflared\config.yml run
+```
+
+当 Tunnel 正常运行后，使用电脑浏览器访问：
+
+```text
+https://yourdomain
+```
+
+若页面、Live2D、对话和唱歌功能都能正常使用，说明公网转发链路已经可用。
+
+### 8. 手机端首次访问设置
+
+使用手机浏览器首次访问时，建议在前端设置中显式填写以下地址：
+
+- `Base URL`：`https://yourdomain`
+- `WebSocket URL`：`wss://yourdomain/client-ws`
+
+不要使用 `localhost`、`127.0.0.1` 或 `ws://`，否则手机端虽然能打开页面，但通常无法完成模型初始化或 WebSocket 连接。
+
+### 9. 手机端使用说明
+
+- 首次进入页面后，建议点击一次页面，再开始对话。移动端浏览器通常需要一次用户手势来解锁音频播放。
+- 如果修改过前端地址配置或更新过前端文件，建议清除手机浏览器中该站点的缓存后再重新访问。
+- 如果后端日志中出现 `GET /undefined/undefined.model3.json 404`，通常说明前端没有正确拿到模型配置或站点缓存未刷新，应优先检查 `Base URL`、`WebSocket URL` 和浏览器缓存。
+- 如果手机端能对话但没有声音，优先确认是否已经点击过页面，以及浏览器是否允许当前站点自动播放音频。
+
 ## 当前已完成的工作
 
 - 已配置 ATRI 的 Live2D 形象

@@ -222,6 +222,9 @@ class ToolExecutor:
                 content_items,
             ) = await self.run_single_tool(tool_name, tool_id, tool_input)
 
+            if not is_error and not str(text_content).strip():
+                text_content = self._build_success_summary(tool_name, metadata)
+
             # Determine content for status update and LLM result format
             status_content = text_content  # Default to text content
             llm_formatted_content = text_content  # Default to text content for LLM
@@ -299,6 +302,17 @@ class ToolExecutor:
             f"Finished executing tools with {len(tool_results_for_llm)} results."
         )
         yield {"type": "final_tool_results", "results": tool_results_for_llm}
+
+    @staticmethod
+    def _build_success_summary(tool_name: str, metadata: Dict[str, Any]) -> str:
+        """Provide a non-empty tool result so the follow-up LLM turn has usable context."""
+        if metadata:
+            try:
+                metadata_text = json.dumps(metadata, ensure_ascii=False)
+                return f"Tool '{tool_name}' executed successfully. Metadata: {metadata_text}"
+            except TypeError:
+                pass
+        return f"Tool '{tool_name}' executed successfully."
 
     async def run_single_tool(
         self, tool_name: str, tool_id: str, tool_input: Any

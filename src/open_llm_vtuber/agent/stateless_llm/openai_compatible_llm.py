@@ -32,6 +32,7 @@ class AsyncLLM(StatelessLLMInterface):
         project_id: str = "z",
         temperature: float = 1.0,
         max_concurrent_requests: int = 1,
+        min_request_interval_seconds: float = 0.0,
     ):
         """
         Initializes an instance of the `AsyncLLM` class.
@@ -48,6 +49,7 @@ class AsyncLLM(StatelessLLMInterface):
         self.model = model
         self.temperature = temperature
         self.max_concurrent_requests = max(1, int(max_concurrent_requests))
+        self.min_request_interval_seconds = max(0.0, float(min_request_interval_seconds))
         self.client = AsyncOpenAI(
             base_url=base_url,
             organization=organization_id,
@@ -65,7 +67,8 @@ class AsyncLLM(StatelessLLMInterface):
 
         logger.info(
             "Initialized AsyncLLM with the parameters: "
-            f"{self.base_url}, {self.model}, max_concurrent_requests={self.max_concurrent_requests}"
+            f"{self.base_url}, {self.model}, max_concurrent_requests={self.max_concurrent_requests}, "
+            f"min_request_interval_seconds={self.min_request_interval_seconds}"
         )
 
     async def chat_completion(
@@ -98,7 +101,9 @@ class AsyncLLM(StatelessLLMInterface):
 
         try:
             async with limit_request_concurrency(
-                self._limiter_key, self.max_concurrent_requests
+                self._limiter_key,
+                self.max_concurrent_requests,
+                self.min_request_interval_seconds,
             ):
                 try:
                     # If system prompt is provided, add it to the messages

@@ -15,6 +15,9 @@ class StatelessLLMBaseConfig(I18nMixin):
     max_concurrent_requests: int = Field(
         1, alias="max_concurrent_requests", ge=1
     )
+    min_request_interval_seconds: float = Field(
+        0.0, alias="min_request_interval_seconds", ge=0.0
+    )
 
     DESCRIPTIONS: ClassVar[dict[str, Description]] = {
         "interrupt_method": Description(
@@ -37,6 +40,16 @@ class StatelessLLMBaseConfig(I18nMixin):
             zh=(
                 "Maximum number of concurrent requests allowed for this LLM backend. "
                 "Set to 1 to fully serialize requests."
+            ),
+        ),
+        "min_request_interval_seconds": Description(
+            en=(
+                "Minimum delay between two requests sent to the same LLM backend. "
+                "Useful for providers that enforce QPS-style rate limits."
+            ),
+            zh=(
+                "Minimum delay between two requests sent to the same LLM backend. "
+                "Useful for providers that enforce QPS-style rate limits."
             ),
         ),
     }
