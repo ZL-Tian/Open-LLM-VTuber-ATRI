@@ -8,6 +8,13 @@
         "command": "uvx",
         "args": ["duckduckgo-mcp-server"]
       },
+      "open-websearch": {
+        "command": "npx",
+        "args": ["open-websearch@latest"],
+        "env": {
+          "DEFAULT_SEARCH_ENGINE": "bing"
+        }
+      },
       "audio-player": {
         "command": "D:\\Projects\\Open-LLM-VTuber-ATRI\\.venv\\Scripts\\python.exe", 
         "args": [
